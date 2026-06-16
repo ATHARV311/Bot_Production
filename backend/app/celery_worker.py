@@ -179,20 +179,30 @@ def process_upload_task(job_id: str, file_path: str, file_name: str, start_time:
         with open(file_path, "rb") as f:
             file_bytes = f.read()
             
-        is_pdf_with_images = False
+        is_scanned_pdf = False
         if file_name.lower().endswith('.pdf'):
             try:
                 import io
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(file_bytes))
-                for page in reader.pages:
-                    if hasattr(page, 'images') and len(page.images) > 0:
-                        is_pdf_with_images = True
-                        break
+                
+                # Check the first few pages for native text
+                extracted_text = ""
+                pages_to_check = min(5, len(reader.pages))
+                for i in range(pages_to_check):
+                    page_text = reader.pages[i].extract_text()
+                    if page_text:
+                        extracted_text += page_text
+                
+                # If we couldn't find much text (less than 50 chars per page on average), 
+                # it's likely a scanned image PDF
+                if len(extracted_text.strip()) < (pages_to_check * 50):
+                    is_scanned_pdf = True
+                    
             except Exception as e:
-                logger.error(f"Error checking PDF for images: {e}")
+                logger.error(f"Error checking PDF for text: {e}")
 
-        if is_pdf_with_images:
+        if is_scanned_pdf:
             logger.info(f"PDF {file_name} contains images. Routing to Sarvam Vision (OCR).")
             ocr_result = sarvam_client.digitize_document(file_bytes=file_bytes, file_name=file_name, language_code="en-IN")
             text_content = ocr_result.get("text", "")

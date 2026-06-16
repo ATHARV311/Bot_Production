@@ -814,7 +814,7 @@ async function handleFileUpload(file) {
                 let progressBubble = document.getElementById(`progress-${data.job_id}`);
                 if (progressBubble) progressBubble.remove();
                 
-                const timeMsg = result.processing_time ? `\n\n⏱️ **Processing Time:** ${result.processing_time} seconds` : "";
+                const timeMsg = result.processing_time_seconds ? `\n\n⏱️ **Processing Time:** ${result.processing_time_seconds} seconds` : "";
                 const msgContent = `✅ **[Knowledge Base Updated]**\n\nSuccessfully indexed: *${file.name}*${timeMsg}`;
                 appendMessageBubble("bot", msgContent);
                 state.messages.push({ role: "assistant", content: msgContent });
@@ -860,21 +860,43 @@ async function handleFileUpload(file) {
                 elements.uploadProgressContainer.innerHTML = html;
                 
                 // Update the chat bubble progress text
-                if (progressResult.total_chunks > 0) {
-                    const globalPercent = Math.min(99, Math.round((progressResult.progress_chunks / progressResult.total_chunks) * 100));
-                    const statusText = `Processed ${progressResult.progress_chunks} / ${progressResult.total_chunks} chunks... (${globalPercent}%)`;
-                    
-                    let progressBubble = document.getElementById(`progress-${data.job_id}`);
+                let progressBubble = document.getElementById(`progress-${data.job_id}`);
+                
+                if (data.status === "COMPLETED") {
                     if (!progressBubble) {
                         progressBubble = document.createElement("div");
                         progressBubble.id = `progress-${data.job_id}`;
                         progressBubble.className = "message bot";
-                        progressBubble.innerHTML = `<div class="message-content">⏳ **Processing Multi-Part Document:** ${statusText}</div>`;
                         elements.chatMessages.appendChild(progressBubble);
-                        elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
-                    } else {
-                        progressBubble.innerHTML = `<div class="message-content">⏳ **Processing Multi-Part Document:** ${statusText}</div>`;
                     }
+                    
+                    let filename = "Document";
+                    if (progressResult.parts) {
+                        const firstPart = Object.values(progressResult.parts)[0];
+                        if (firstPart && firstPart.file_name) filename = firstPart.file_name;
+                    }
+                    const procTime = progressResult.processing_time_seconds ? progressResult.processing_time_seconds : "0.00";
+                    
+                    progressBubble.innerHTML = `
+                    <div class="message-content">
+                        ✅ <strong>[Knowledge Base Updated]</strong><br><br>
+                        Successfully indexed: <em>${filename}</em><br><br>
+                        ⏱️ <span style="color: #0dcaf0;">Processing Time:</span> ${procTime} seconds
+                    </div>`;
+                    
+                    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+                } else if (progressResult.total_chunks > 0) {
+                    const globalPercent = Math.min(99, Math.round((progressResult.progress_chunks / progressResult.total_chunks) * 100));
+                    const statusText = `Processed ${progressResult.progress_chunks} / ${progressResult.total_chunks} chunks... (${globalPercent}%)`;
+                    
+                    if (!progressBubble) {
+                        progressBubble = document.createElement("div");
+                        progressBubble.id = `progress-${data.job_id}`;
+                        progressBubble.className = "message bot";
+                        elements.chatMessages.appendChild(progressBubble);
+                    }
+                    progressBubble.innerHTML = `<div class="message-content">⏳ <strong>Processing Multi-Part Document:</strong> ${statusText}</div>`;
+                    elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
                 }
             });
         }

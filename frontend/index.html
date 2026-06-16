@@ -1,5 +1,6 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,12 +8,15 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="index.css">
 </head>
+
 <body class="dark-theme">
     <div class="app-container">
         <!-- Sidebar Navigation -->
@@ -59,7 +63,7 @@
 
             <div class="settings-panel card">
                 <h3><i class="fa-solid fa-sliders"></i> Preferences</h3>
-                
+
                 <div class="form-group">
                     <label for="language-select">Target Language</label>
                     <select id="language-select">
@@ -103,9 +107,10 @@
             <div class="knowledge-panel card">
                 <h3><i class="fa-solid fa-folder-open"></i> Knowledge Grounding</h3>
                 <p class="panel-desc">Upload company PDFs/Text to index into local RAG memory.</p>
-                
+
                 <div class="upload-dropzone" id="dropzone">
-                    <input type="file" id="file-input" accept=".pdf,.txt,.md,.json,.docx" title="Upload a document file">
+                    <input type="file" id="file-input" accept=".pdf,.txt,.md,.json,.docx"
+                        title="Upload a document file">
                     <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
                     <span>Drag & Drop or <strong class="browse-link">Browse</strong></span>
                     <span class="file-limits">PDF, TXT, MD, JSON, DOCX (Max 50MB)</span>
@@ -121,12 +126,12 @@
                         <li class="empty-sources">No documents uploaded yet.</li>
                     </ul>
                 </div>
-                
+
                 <button class="btn btn-danger btn-sm w-100" id="clear-docs-btn">
                     <i class="fa-solid fa-trash-can"></i> Clear Knowledge Base
                 </button>
             </div>
-            
+
             <div class="sidebar-footer">
                 <p>Powered by Sarvam AI</p>
                 <div class="theme-switcher">
@@ -166,14 +171,19 @@
                             <i class="fa-solid fa-sparkles"></i>
                         </div>
                         <h2>How can I assist you today?</h2>
-                        <p>I am your specialized corporate assistant powered by <strong>Sarvam AI</strong>. Upload documents to query company secrets, or speak directly in your regional language!</p>
-                        
+                        <p>I am your specialized corporate assistant powered by <strong>Sarvam AI</strong>. Upload
+                            documents to query company secrets, or speak directly in your regional language!</p>
+
                         <div class="suggested-queries">
                             <h4>Suggested Quick Prompts</h4>
                             <div class="suggestion-chips">
-                                <button class="chip" data-query="Explain how RAG grounding works in this chatbot.">💡 Tell me about RAG Grounding</button>
-                                <button class="chip" data-query="How does Sarvam AI optimize for Indian languages?">🇮🇳 Indian Language Optimization</button>
-                                <button class="chip" data-query="Help me write a professional leave request email in formal English and Hindi.">📝 Leave Request Email</button>
+                                <button class="chip" data-query="Explain how RAG grounding works in this chatbot.">💡
+                                    Tell me about RAG Grounding</button>
+                                <button class="chip" data-query="How does Sarvam AI optimize for Indian languages?">🇮🇳
+                                    Indian Language Optimization</button>
+                                <button class="chip"
+                                    data-query="Help me write a professional leave request email in formal English and Hindi.">📝
+                                    Leave Request Email</button>
                             </div>
                         </div>
                     </div>
@@ -191,8 +201,10 @@
                 </div>
                 <div class="voice-player-controls">
                     <audio id="global-audio-player"></audio>
-                    <button class="voice-control-btn" id="audio-play-pause-btn" title="Pause audio playback" aria-label="Pause audio playback"><i class="fa-solid fa-pause"></i></button>
-                    <button class="voice-control-btn" id="audio-stop-btn" title="Stop audio playback" aria-label="Stop audio playback"><i class="fa-solid fa-square"></i></button>
+                    <button class="voice-control-btn" id="audio-play-pause-btn" title="Pause audio playback"
+                        aria-label="Pause audio playback"><i class="fa-solid fa-pause"></i></button>
+                    <button class="voice-control-btn" id="audio-stop-btn" title="Stop audio playback"
+                        aria-label="Stop audio playback"><i class="fa-solid fa-square"></i></button>
                 </div>
             </div>
 
@@ -206,7 +218,7 @@
                         <i class="fa-solid fa-camera"></i>
                     </button>
                     <input type="file" id="ocr-file-input" accept="image/*,.pdf" title="Upload an image or PDF for OCR">
-                    
+
                     <div class="mic-recording-indicator hidden" id="mic-recording-ui">
                         <span class="rec-dot"></span>
                         <span class="rec-text">Listening... Speak in <span id="rec-lang-label">Hindi</span></span>
@@ -217,20 +229,24 @@
                         <button class="btn btn-sm btn-secondary" id="cancel-mic-btn">Cancel</button>
                     </div>
 
-                    <textarea id="chat-input-textarea" placeholder="Ask a question about HR, IT policies, or search document knowledge..." rows="1"></textarea>
-                    
+                    <textarea id="chat-input-textarea"
+                        placeholder="Ask a question about HR, IT policies, or search document knowledge..."
+                        rows="1"></textarea>
+
                     <button class="send-btn" id="send-btn" disabled title="Send message" aria-label="Send message">
                         <i class="fa-solid fa-paper-plane"></i>
                     </button>
                 </div>
                 <div class="input-footer-text">
-                    Sarvam AI models may produce inaccurate response details. Ground responses by uploading verified sources.
+                    Sarvam AI models may produce inaccurate response details. Ground responses by uploading verified
+                    sources.
                 </div>
             </footer>
         </main>
     </div>
 
     <!-- Custom App Logic -->
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
+
 </html>

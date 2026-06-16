@@ -50,14 +50,17 @@ def update_job_status(job_id: str, status: str, result: dict = None, error: str 
             cursor = conn.cursor()
             
             if part_id and result:
-                cursor.execute('SELECT result FROM jobs WHERE job_id = ?', (job_id,))
+                cursor.execute('SELECT start_time, result FROM jobs WHERE job_id = ?', (job_id,))
                 row = cursor.fetchone()
                 existing_result = {}
-                if row and row[0]:
-                    try:
-                        existing_result = json.loads(row[0])
-                    except json.JSONDecodeError:
-                        pass
+                start_time = None
+                if row:
+                    start_time = row[0]
+                    if row[1]:
+                        try:
+                            existing_result = json.loads(row[1])
+                        except json.JSONDecodeError:
+                            pass
                         
                 parts = existing_result.get('parts', {})
                 parts[part_id] = result
@@ -76,6 +79,9 @@ def update_job_status(job_id: str, status: str, result: dict = None, error: str 
                 
                 if all_completed:
                     status = "COMPLETED"
+                    import time
+                    if start_time:
+                        existing_result["processing_time_seconds"] = round(time.time() - start_time, 2)
                 elif status != "FAILED":
                     status = "PROCESSING"
                 
@@ -113,6 +119,13 @@ def get_job(job_id: str) -> dict:
                 job_data["error"] = error
                 
             return job_data
+
+def clear_jobs():
+    with db_lock:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM jobs')
+            conn.commit()
 
 # Initialize the table when the module loads
 init_db()

@@ -243,6 +243,14 @@ async def clear_documents():
     try:
         if hasattr(rag_engine, 'clear_index'):
             rag_engine.clear_index()
+            
+        # Clear the jobs table so frontend UI is clean
+        try:
+            import app.services.job_manager as jm
+            jm.clear_jobs()
+        except Exception as e:
+            print(f"Error clearing jobs: {e}")
+            
         return {"success": True, "message": "Knowledge base cleared."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
