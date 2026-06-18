@@ -7,10 +7,8 @@ from threading import Lock
 logger = logging.getLogger(__name__)
 
 # Ensure DB directory exists
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-BACKEND_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
-DB_DIR = os.path.join(BACKEND_ROOT, "db")
-os.makedirs(DB_DIR, exist_ok=True)
+import tempfile
+DB_DIR = tempfile.gettempdir()
 
 DB_PATH = os.path.join(DB_DIR, "jobs.db")
 db_lock = Lock()

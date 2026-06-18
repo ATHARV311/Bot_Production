@@ -36,8 +36,11 @@
             </button>
 
             <div class="history-panel card" id="history-panel">
-                <h3><i class="fa-solid fa-clock-rotate-left"></i> Chat History</h3>
-                <div class="sessions-list-container">
+                <div class="panel-header" id="history-header" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+                    <h3><i class="fa-solid fa-clock-rotate-left"></i> Chat History</h3>
+                    <i class="fa-solid fa-chevron-down toggle-icon" id="history-toggle-icon" style="transition: transform 0.3s; color: var(--text-secondary);"></i>
+                </div>
+                <div class="sessions-list-container collapsible-content" id="history-content">
                     <ul class="sessions-list" id="sessions-list">
                         <!-- Populated by JavaScript -->
                     </ul>
@@ -121,8 +124,8 @@
                 </div>
 
                 <div class="sources-list-container">
-                    <h4>Indexed Source Files</h4>
-                    <ul class="sources-list" id="sources-list">
+                    <h4>Your Uploaded Documents</h4>
+                    <ul class="sources-list" id="user-documents-list">
                         <li class="empty-sources">No documents uploaded yet.</li>
                     </ul>
                 </div>
@@ -133,8 +136,19 @@
             </div>
 
             <div class="sidebar-footer">
-                <p>Powered by Sarvam AI</p>
-                <div class="theme-switcher">
+                <div class="user-profile">
+                    <div class="user-info">
+                        <i class="fa-solid fa-circle-user avatar-icon"></i>
+                        <div class="user-text">
+                            <span class="username" id="display-username">User</span>
+                            <span class="user-role" id="display-role">Customer</span>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="logout-btn" title="Sign Out">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+                <div class="theme-switcher" style="margin-top: 15px;">
                     <i class="fa-solid fa-moon active" id="dark-theme-btn"></i>
                     <i class="fa-solid fa-sun" id="light-theme-btn"></i>
                 </div>
@@ -146,6 +160,9 @@
             <!-- Chat Header -->
             <header class="chat-header">
                 <div class="chat-header-info">
+                    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Sidebar">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
                     <div class="avatar">
                         <i class="fa-solid fa-robot"></i>
                         <span class="online-indicator"></span>
@@ -245,8 +262,9 @@
         </main>
     </div>
 
-    <!-- Custom App Logic -->
-    <script src="app.js?v=2"></script>
+
+    <script src="auth.js"></script>
+    <script src="app.js"></script>
 </body>
 
 </html>

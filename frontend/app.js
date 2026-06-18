@@ -20,6 +20,7 @@ let state = {
 // DOM SELECTORS
 // ==========================================================================
 const elements = {
+    sidebarToggle: document.getElementById("sidebar-toggle"),
     systemMode: document.getElementById("system-mode"),
     apiStatus: document.getElementById("api-status"),
     indexedChunks: document.getElementById("indexed-chunks"),
@@ -59,11 +60,65 @@ const elements = {
 };
 
 // ==========================================================================
+// AUTHENTICATION CHECK & GLOBAL FETCH OVERRIDE
+// ==========================================================================
+const token = localStorage.getItem('sarvam_jwt');
+if (!token) {
+    window.location.href = 'login.html';
+}
+
+const originalFetch = window.fetch;
+window.fetch = async function() {
+    let [resource, config] = arguments;
+    if (typeof resource === 'string' && resource.startsWith(BASE_URL)) {
+        config = config || {};
+        // If config.body is FormData, don't set Content-Type header manually
+        const isFormData = config.body instanceof FormData;
+        
+        if (!config.headers) {
+            config.headers = {};
+        }
+        
+        // Convert headers object to handle different ways it might have been passed
+        const headersObj = new Headers(config.headers);
+        const jwt = localStorage.getItem('sarvam_jwt');
+        if (jwt) {
+            headersObj.set('Authorization', `Bearer ${jwt}`);
+        }
+        
+        config.headers = headersObj;
+    }
+    
+    const response = await originalFetch(resource, config);
+    if (response.status === 401) {
+        localStorage.removeItem('sarvam_jwt');
+        window.location.href = 'login.html';
+    }
+    return response;
+};
+
+// ==========================================================================
 // APP INITIALIZATION
 // ==========================================================================
 document.addEventListener("DOMContentLoaded", () => {
     // 1. Initial server scanning
     scanServerStatus();
+    
+    // Set Profile Info
+    const displayUsername = document.getElementById('display-username');
+    const displayRole = document.getElementById('display-role');
+    if(displayUsername) displayUsername.innerText = localStorage.getItem('sarvam_username') || 'User';
+    if(displayRole) displayRole.innerText = localStorage.getItem('sarvam_role') || 'Customer'; // we need to save role in auth.js!
+    
+    const logoutBtn = document.getElementById('logout-btn');
+    if(logoutBtn) {
+        logoutBtn.onclick = () => {
+            localStorage.removeItem('sarvam_jwt');
+            localStorage.removeItem('sarvam_username');
+            localStorage.removeItem('sarvam_role');
+            window.location.href = 'login.html';
+        };
+    }
     
     // 2. Setup Action Listeners
     setupThemeHandlers();
@@ -74,10 +129,37 @@ document.addEventListener("DOMContentLoaded", () => {
     setupOCRHandlers();
     setupSuggestedChips();
     
-    // 3. Initialize chat history sessions
+    // 3. Initialize dynamic dashboard data
     initializeSessions();
     setupSessionHandlers();
+    loadDocuments();
 });
+
+async function loadDocuments() {
+    try {
+        const res = await fetch(`${BASE_URL}/api/documents`);
+        if (res.ok) {
+            const data = await res.json();
+            const list = document.getElementById('user-documents-list');
+            if (!list) return;
+            list.innerHTML = '';
+            if (data.documents.length === 0) {
+                list.innerHTML = '<li class="empty-sources">No documents uploaded yet.</li>';
+                return;
+            }
+            data.documents.forEach(doc => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <div class="file-info">
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span title="${doc.filename}">${doc.filename}</span>
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+    } catch(e) { console.error("Failed to load documents"); }
+}
 
 // ==========================================================================
 // PREFERENCES & UTILITIES HANDLERS
@@ -92,10 +174,36 @@ function setupPreferencesHandlers() {
     if (elements.languageSelect) {
         elements.languageSelect.addEventListener("change", () => {
             const activeLangName = elements.languageSelect.options[elements.languageSelect.selectedIndex].text.split(" (")[0];
-            createNewSession();
-            appendMessageBubble("bot", `🌐 **[System Notification]** Target language changed to **${activeLangName}**. A fresh conversation has been started to keep your assistant aligned with the new language preference.`);
+            showToast(`Language set to ${activeLangName}`);
         });
     }
+}
+
+// ==========================================================================
+// TOAST NOTIFICATIONS
+// ==========================================================================
+function showToast(message) {
+    let container = document.querySelector('.toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.appendChild(container);
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.innerHTML = `<i class="fa-solid fa-globe"></i> <span>${message}</span>`;
+    
+    container.appendChild(toast);
+    
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 // ==========================================================================
@@ -115,6 +223,13 @@ function setupThemeHandlers() {
             document.body.classList.remove("dark-theme");
             elements.lightThemeBtn.classList.add("active");
             elements.darkThemeBtn.classList.remove("active");
+        });
+    }
+
+    if (elements.sidebarToggle) {
+        elements.sidebarToggle.addEventListener("click", () => {
+            const sidebar = document.querySelector(".sidebar");
+            sidebar.classList.toggle("collapsed");
         });
     }
 }
@@ -225,16 +340,64 @@ function setupChatInputHandlers() {
 function formatMarkdown(text) {
     if (!text) return "";
     
-    let formatted = String(text)
+    let formatted = String(text);
+    
+    // Remove <thought> or <think> internal reasoning blocks completely
+    formatted = formatted.replace(/<(?:thought|think)>[\s\S]*?(?:<\/(?:thought|think)>|$)/g, "");
+    
+    // Check for Email Card Payload BEFORE escaping HTML
+    const emailMatch = formatted.match(/\[EMAIL_CARD\]\nRECIPIENT:(.*?)\nSUBJECT:(.*?)\nBODY:([\s\S]*?)\nMAILTO:(.*?)\nGMAIL:(.*?)\n\[\/EMAIL_CARD\]/);
+    let emailHtml = "";
+    if (emailMatch) {
+        const [fullMatch, rec, sub, body, mailto, gmail] = emailMatch;
+        formatted = formatted.replace(fullMatch, "[[EMAIL_CARD_PLACEHOLDER]]");
+        
+        // Build the sleek UI Card
+        emailHtml = `
+            <div class="email-draft-card" style="border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; background-color: var(--bg-tertiary); margin-top: 15px; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+                    <i class="fa-solid fa-envelope" style="color: var(--accent-primary); font-size: 1.2rem; margin-right: 12px;"></i>
+                    <h3 style="margin: 0; font-size: 1rem; color: var(--text-primary);">Email Draft Ready</h3>
+                </div>
+                <div style="margin-bottom: 8px; font-size: 0.9rem;">
+                    <strong style="color: var(--text-secondary);">To:</strong> <span style="color: var(--text-primary);">${rec.trim()}</span>
+                </div>
+                <div style="margin-bottom: 15px; font-size: 0.9rem;">
+                    <strong style="color: var(--text-secondary);">Subject:</strong> <span style="color: var(--text-primary); font-weight: 500;">${sub.trim()}</span>
+                </div>
+                <div style="padding: 15px; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; white-space: pre-wrap; font-family: 'Inter', sans-serif; font-size: 0.9rem; line-height: 1.5; color: var(--text-primary); margin-bottom: 20px;">${body.trim()}</div>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <a href="${mailto.trim()}" class="btn-primary" style="text-decoration: none; padding: 8px 16px; border-radius: 6px; display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                        <i class="fa-regular fa-paper-plane"></i> Send via Default App
+                    </a>
+                    <a href="${gmail.trim()}" target="_blank" class="btn-secondary" style="text-decoration: none; padding: 8px 16px; border-radius: 6px; display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 500; transition: all 0.2s;">
+                        <i class="fa-brands fa-google"></i> Send via Gmail
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    formatted = formatted
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+        
+    if (emailHtml) {
+        formatted = formatted.replace("[[EMAIL_CARD_PLACEHOLDER]]", emailHtml);
+    }
     
     formatted = formatted.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     formatted = formatted.replace(/\*(.*?)\*/g, "<em>$1</em>");
     formatted = formatted.replace(/`(.*?)`/g, "<code>$1</code>");
     formatted = formatted.replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-height: 180px; border-radius: 8px; margin-top: 10px;">');
     formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="chat-link"><i class="fa-solid fa-arrow-up-right-from-square"></i> $1</a>');
+    
+    // Safely parse the Token Usage placeholder into HTML
+    formatted = formatted.replace(/\[TOKEN_USAGE: (.*?)\]/g, "<div class='text-xs text-gray-500 mt-2 text-right' style='opacity: 0.6;'>🪙 Tokens: $1</div>");
+    
+    // Recover old tokens from history that got HTML-escaped
+    formatted = formatted.replace(/&lt;div class='text-xs text-gray-500 mt-2 text-right' style='opacity: 0\.6;'&gt;🪙 Tokens: (.*?)&lt;\/div&gt;/g, "<div class='text-xs text-gray-500 mt-2 text-right' style='opacity: 0.6;'>🪙 Tokens: $1</div>");
 
     // Clean up hidden system action payload parameters before generating layouts
     formatted = formatted.replace(/\[EMAIL_START\]/g, "");
@@ -275,8 +438,7 @@ function formatMarkdown(text) {
             } else {
                 if (inUl) { html += '</ul>'; inUl = false; }
                 if (inOl) { html += '</ol>'; inOl = false; }
-                
-                if (line.startsWith('<h')) {
+                if (line.startsWith('<h') || line.startsWith('<div')) {
                     html += line;
                 } else {
                     html += `<p>${line}</p>`;
@@ -674,7 +836,10 @@ async function processRecordedAudio() {
 // ==========================================================================
 function setupOCRHandlers() {
     if (!elements.ocrBtn) return;
-    elements.ocrBtn.addEventListener("click", () => elements.ocrFileInput.click());
+    elements.ocrBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        elements.ocrFileInput.click();
+    });
     elements.ocrFileInput.addEventListener("change", (e) => {
         if (e.target.files.length > 0) handleOCRUpload(e.target.files[0]);
     });
@@ -916,43 +1081,77 @@ async function clearRAGKnowledge() {
 // ==========================================================================
 // CHAT SESSION & CONVERSATION HISTORY MANAGEMENT
 // ==========================================================================
-function initializeSessions() {
-    const storedSessions = localStorage.getItem("sarvam_chat_sessions");
-    const storedCurrentId = localStorage.getItem("sarvam_chat_current_session_id");
-    
-    if (storedSessions) {
-        state.sessions = JSON.parse(storedSessions);
-        state.currentSessionId = storedCurrentId;
+async function initializeSessions() {
+    try {
+        const res = await fetch(`${BASE_URL}/api/history`);
+        if (res.ok) {
+            const data = await res.json();
+            state.sessions = data.sessions;
+        }
+    } catch(e) {
+        console.error("Failed to load history");
     }
     
-    if (state.sessions.length === 0) {
-        createNewSession();
-    } else {
-        const currentSession = state.sessions.find(s => s.id === state.currentSessionId);
-        if (currentSession) {
-            state.messages = currentSession.messages;
-            renderChatMessages();
-        } else {
-            state.currentSessionId = state.sessions[0].id;
-            state.messages = state.sessions[0].messages;
-            renderChatMessages();
-        }
+    const storedCurrentId = localStorage.getItem("sarvam_chat_current_session_id");
+    
+    if (state.sessions.length > 0) {
+        state.currentSessionId = storedCurrentId || state.sessions[0].session_id;
+        const currentSession = state.sessions.find(s => s.session_id === state.currentSessionId) || state.sessions[0];
+        state.messages = currentSession.messages || [];
+        renderChatMessages();
         renderSessionsList();
+    } else {
+        createNewSession();
     }
 }
 
 function setupSessionHandlers() {
     if (elements.newChatBtn) elements.newChatBtn.addEventListener("click", () => createNewSession());
+    
+    const historyHeader = document.getElementById("history-header");
+    const historyContent = document.getElementById("history-content");
+    const historyToggleIcon = document.getElementById("history-toggle-icon");
+    
+    if (historyHeader && historyContent) {
+        historyHeader.addEventListener("click", () => {
+            historyContent.classList.toggle("collapsed");
+            if (historyToggleIcon) {
+                historyToggleIcon.classList.toggle("rotated");
+            }
+        });
+    }
+}
+
+async function deleteSession(sessionId) {
+    try {
+        const res = await fetch(`${BASE_URL}/api/history/${sessionId}`, { method: 'DELETE' });
+        if (res.ok) {
+            state.sessions = state.sessions.filter(s => s.session_id !== sessionId);
+            if (state.currentSessionId === sessionId) {
+                if (state.sessions.length > 0) {
+                    state.currentSessionId = state.sessions[0].session_id;
+                    state.messages = state.sessions[0].messages || [];
+                    localStorage.setItem("sarvam_chat_current_session_id", state.currentSessionId);
+                } else {
+                    createNewSession();
+                    return;
+                }
+            }
+            renderSessionsList();
+            renderChatMessages();
+        } else {
+            console.error("Failed to delete session");
+        }
+    } catch(e) { console.error(e); }
 }
 
 function createNewSession() {
     const sessionId = "session_" + Date.now();
-    const newSession = { id: sessionId, title: "New Chat", messages: [] };
+    const newSession = { session_id: sessionId, title: "New Chat", messages: [] };
     state.sessions.unshift(newSession);
     state.currentSessionId = sessionId;
     state.messages = [];
     
-    localStorage.setItem("sarvam_chat_sessions", JSON.stringify(state.sessions));
     localStorage.setItem("sarvam_chat_current_session_id", sessionId);
     renderSessionsList();
     renderChatMessages();
@@ -964,29 +1163,25 @@ function renderSessionsList() {
     
     state.sessions.forEach(session => {
         const li = document.createElement("li");
-        li.className = session.id === state.currentSessionId ? "active" : "";
+        li.className = session.session_id === state.currentSessionId ? "active" : "";
         li.innerHTML = `
             <div class="session-title">
                 <i class="fa-regular fa-message"></i>
                 <span title="${session.title}">${session.title}</span>
             </div>
-            <button class="delete-session-btn"><i class="fa-solid fa-trash-can"></i></button>
+            <button class="delete-session-btn" title="Delete Chat"><i class="fa-solid fa-trash-can"></i></button>
         `;
         
         li.addEventListener("click", (e) => {
-            if (!e.target.closest(".delete-session-btn")) {
-                state.currentSessionId = session.id;
-                state.messages = session.messages;
-                localStorage.setItem("sarvam_chat_current_session_id", session.id);
-                renderSessionsList();
-                renderChatMessages();
+            if (e.target.closest(".delete-session-btn")) {
+                deleteSession(session.session_id);
+                return;
             }
-        });
-        
-        li.querySelector(".delete-session-btn").addEventListener("click", () => {
-            state.sessions = state.sessions.filter(s => s.id !== session.id);
-            localStorage.setItem("sarvam_chat_sessions", JSON.stringify(state.sessions));
-            initializeSessions();
+            state.currentSessionId = session.session_id;
+            state.messages = session.messages || [];
+            localStorage.setItem("sarvam_chat_current_session_id", session.session_id);
+            renderSessionsList();
+            renderChatMessages();
         });
         
         elements.sessionsList.appendChild(li);

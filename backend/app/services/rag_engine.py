@@ -4,6 +4,7 @@ import json
 import warnings
 import shutil
 import requests
+import tempfile
 
 # Suppress CryptographyDeprecationWarning from pypdf import of ARC4
 warnings.filterwarnings("ignore", message=".*ARC4 has been moved to cryptography.*")
@@ -18,8 +19,10 @@ from langchain_chroma import Chroma
 
 class RAGEngine:
     def __init__(self):
-        self.db_dir = os.path.join(settings.DB_DIR, "chroma_db")
-        self.metadata_path = os.path.join(settings.DB_DIR, "documents_metadata.json")
+        self.db_dir = os.path.join(tempfile.gettempdir(), "sarvam_chroma_db")
+        self.metadata_path = os.path.join(tempfile.gettempdir(), "sarvam_documents_metadata.json")
+        self.chunk_size = 500
+        self.chunk_overlap = 50
         self.metadata = {"files": [], "total_chunks": 0}
         self.load_metadata()
         

@@ -36,7 +36,9 @@ class AgentState(TypedDict):
 
 # Local DB persistence tracks
 BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DB_DIR = os.path.join(BACKEND_ROOT, "db")
+import tempfile
+DB_DIR = os.path.join(tempfile.gettempdir(), "sarvam_chat_db")
+os.makedirs(DB_DIR, exist_ok=True)
 CACHE_FILE = os.path.join(DB_DIR, "conversation_cache.json")
 HISTORY_FILE = os.path.join(DB_DIR, "conversation_history.json")
 
@@ -57,6 +59,16 @@ def save_json_db(file_path: str, data: dict):
         logger.error(f"Graph disk state sync failed: {str(e)}")
 
 # ─── 2. THE MULTI-AGENT COOPERATIVE NODES ───
+
+def extract_token_usage(api_res: dict) -> str:
+    usage = api_res.get("usage", {}) if isinstance(api_res, dict) else {}
+    if usage:
+        prompt = usage.get("prompt_tokens", 0)
+        completion = usage.get("completion_tokens", 0)
+        total = usage.get("total_tokens", prompt + completion)
+        if prompt > 0 or completion > 0:
+            return f"\n\n[TOKEN_USAGE: {prompt} incoming | {completion} responding]"
+    return ""
 
 def memory_agent_node(state: AgentState) -> Dict[str, Any]:
     """Agent 6 (Memory): Loads conversation history for localized short-term context windowing."""
@@ -99,14 +111,15 @@ def supervisor_agent_node(state: AgentState) -> Dict[str, Any]:
                 return {"query": previous_query, "next_step": "web_scraper"}
     # ─────────────────────────────────────
     
-    prompt = f"""Classify this query into one of these exact categories: CHAT, RAG, WEB, EMAIL.
+    prompt = f"""Classify this query into one of these exact categories: CHAT, RAG, WEB, EMAIL, OFF_TOPIC.
+- OFF_TOPIC: user asks for coding scripts (python, html, etc.), programming help, recipes, entertainment, or anything completely unrelated to corporate operations, company products, or professional assistance.
 - EMAIL: user wants to draft, write, or send an email.
 - WEB: user asks for latest news, live scores, current affairs, or anything requiring live internet/external data.
 - RAG: user asks about uploaded documents, company policy, HR rules, internal pdfs, OR user enters a specific text snippet, quote, or phrase from a document they want to find/explain.
 - CHAT: user specifically says hello, greetings, or asks for date/time.
 
 Query: '{query}'
-Reply ONLY with the category name (CHAT, RAG, WEB, or EMAIL) and nothing else."""
+Reply ONLY with the category name (CHAT, RAG, WEB, EMAIL, or OFF_TOPIC) and nothing else."""
 
     try:
         res = sarvam_client.chat_complete(messages=[{"role": "user", "content": prompt}], model="sarvam-30b", temperature=0.1)
@@ -117,7 +130,9 @@ Reply ONLY with the category name (CHAT, RAG, WEB, or EMAIL) and nothing else.""
         
     logger.info(f"🎯 Supervisor Intent Evaluated: {intent}")
 
-    if "EMAIL" in intent:
+    if "OFF_TOPIC" in intent:
+        return {"next_step": "guardrail_agent"}
+    elif "EMAIL" in intent:
         return {"next_step": "email_agent"}
     elif "CHAT" in intent:
         return {"next_step": "general_chat_agent"}
@@ -130,6 +145,11 @@ Reply ONLY with the category name (CHAT, RAG, WEB, or EMAIL) and nothing else.""
             logger.info("RAG is OFF. Routing to Web Scraper.")
             return {"next_step": "web_scraper"}
 
+
+def guardrail_agent_node(state: AgentState) -> Dict[str, Any]:
+    """Agent: Firewall for off-topic queries."""
+    logger.info("🛡️ Agent (Guardrail): Blocking off-topic query...")
+    return {"agent_response": "I'm Prixgen-AI which is built for enterprise management and help and I'm not authorized to provide things beyond our products.", "agent_type": "GUARDRAIL", "next_step": "supervisor_synthesizer"}
 
 def general_chat_agent_node(state: AgentState) -> Dict[str, Any]:
     """Agent: Handles generic chatting and dynamic date/time injection."""
@@ -151,6 +171,10 @@ def general_chat_agent_node(state: AgentState) -> Dict[str, Any]:
             bot_msg = turn.get("bot", "")
             bot_msg = bot_msg.replace("⚠️ *Not present in knowledge base. Going for web search...*\n\n", "")
             bot_msg = bot_msg.replace("⚠️ *RAG error occurred. Falling back to web search...*\n\n", "")
+            # Prevent token hallucination by stripping old tokens
+            bot_msg = re.sub(r"\[TOKEN_USAGE:.*?\]", "", bot_msg)
+            bot_msg = re.sub(r"<div class='text-xs.*?</div>", "", bot_msg)
+            
             messages.append({"role": "user", "content": turn.get("user", "")})
             messages.append({"role": "assistant", "content": bot_msg})
             
@@ -162,6 +186,7 @@ def general_chat_agent_node(state: AgentState) -> Dict[str, Any]:
                 response = f"⚠️ **API Error:** {res.get('message', 'API failed.')}"
             else:
                 response = res["choices"][0]["message"]["content"]
+                response += extract_token_usage(res)
         except Exception as e:
             logger.error(f"Chat LLM failed: {e}")
             response = "Hello! How can I assist your corporate workflow today?"
@@ -227,41 +252,83 @@ def email_agent_node(state: AgentState) -> Dict[str, Any]:
     """Agent 5 (Email): Generates tailored communication schemas."""
     logger.info("✉️ Agent 5 (Email): Building tailored communications templates...")
     target_lang = state.get("target_directive", "English text output format")
-    
+    history_text = "\n".join([f"User: {t.get('user', '')}\nBot: {t.get('bot', '')}" for t in state.get("history", [])])
+    if not history_text.strip():
+        history_text = "(No prior chat history available)"
+        
     email_prompt = (
-        f"Write a polished professional business email layout based on this request: '{state['query']}'.\n"
-        f"CRITICAL REQUIREMENT: You must write the email completely in this language format: {target_lang}.\n"
-        f"Respond using this exact plain structural alignment without extra comments:\n"
-        f"[RECIPIENT: Email address entry]\n"
-        f"[SUBJECT: Subject Line]\n"
-        f"[BODY: Clear business message text]"
+        f"You are a strict email drafting agent. Your ONLY job is to draft a business email based on the user's request.\n"
+        f"Use the chat history as context if the user asks to summarize the conversation.\n\n"
+        f"--- CHAT HISTORY ---\n{history_text}\n--------------------\n\n"
+        f"USER REQUEST: '{state['query']}'\n\n"
+        f"CRITICAL INSTRUCTION: You must write the email completely in this language: {target_lang}.\n"
+        f"CRITICAL INSTRUCTION: You may reason about your response, but you MUST place all reasoning inside <think>...</think> tags.\n"
+        f"After you finish thinking, you MUST output the final email wrapped in a ```json markdown block.\n\n"
+        f"FORMAT YOU MUST FOLLOW:\n"
+        f"<think>\n"
+        f"Planning the email structure here...\n"
+        f"</think>\n"
+        f"```json\n"
+        f"{{\n"
+        f'  "recipient": "manager@example.com",\n'
+        f'  "subject": "Relevant Subject Line",\n'
+        f'  "body": "The email text body goes here."\n'
+        f"}}\n"
+        f"```\n\n"
+        f"START OUTPUT NOW:"
     )
     try:
-        api_res = sarvam_client.chat_complete(messages=[{"role": "user", "content": email_prompt}], model="sarvam-30b")
+        messages = [
+            {"role": "system", "content": "You are an email drafting agent. Think before generating, and always output the final email in a ```json block."},
+            {"role": "user", "content": email_prompt}
+        ]
+        api_res = sarvam_client.chat_complete(messages=messages, model="sarvam-30b", temperature=0.2)
         ai_draft = api_res["choices"][0].get("message", {}).get("content", "") if "choices" in api_res else ""
+        token_str = extract_token_usage(api_res)
     except Exception:
-        ai_draft = "[RECIPIENT: ]\n[SUBJECT: Backup Template]\n[BODY: Backup communications framework template container.]"
+        ai_draft = ""
+        token_str = ""
 
-    recipient = ""
-    subject = ""
-    body_text = ai_draft
+    # Extract JSON safely
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", ai_draft, re.DOTALL | re.IGNORECASE)
+    if json_match:
+        clean_json_str = json_match.group(1).strip()
+    else:
+        # Try to find anything that looks like a JSON dictionary
+        fallback_match = re.search(r"(\{.*\})", ai_draft, re.DOTALL)
+        clean_json_str = fallback_match.group(1).strip() if fallback_match else "{}"
 
-    rec_match = re.search(r"\[RECIPIENT:\s*(.*?)\]", ai_draft, re.IGNORECASE)
-    sub_match = re.search(r"\[SUBJECT:\s*(.*?)\]", ai_draft, re.IGNORECASE)
-    body_match = re.search(r"\[BODY:\s*(.*?)\]", ai_draft, re.IGNORECASE | re.DOTALL)
+    recipient = "manager@example.com"
+    subject = "Draft Email"
+    body_text = "Failed to generate email content. Please try again."
 
-    if rec_match: recipient = rec_match.group(1).strip()
-    if sub_match: subject = sub_match.group(1).strip()
-    if body_match: body_text = body_match.group(1).strip()
+    try:
+        parsed = json.loads(clean_json_str)
+        recipient = parsed.get("recipient", recipient)
+        subject = parsed.get("subject", subject)
+        body_text = parsed.get("body", body_text)
+    except json.JSONDecodeError:
+        logger.error(f"Failed to parse JSON email from AI: {clean_json_str}")
+        # Never leak raw AI thought process to the body
+        pass
+
+    # Truncate for URL safety (Gmail and Mailto have limits ~2000 chars)
+    url_body = body_text if len(body_text) < 1500 else body_text[:1500] + "\n\n[...Truncated due to length limit...]"
 
     safe_rec = urllib.parse.quote(recipient)
     safe_sub = urllib.parse.quote(subject)
-    safe_body = urllib.parse.quote(body_text)
+    safe_body = urllib.parse.quote(url_body)
 
     mailto_link = f"mailto:{safe_rec}?subject={safe_sub}&body={safe_body}"
     gmail_link = f"https://mail.google.com/mail/u/0/?view=cm&fs=1&to={safe_rec}&su={safe_sub}&body={safe_body}"
     
-    final_output = f"{ai_draft}\n\n🔗 **[Open in Default App]({mailto_link})**  |  🔗 **[Open in Gmail]({gmail_link})**"
+    final_output = f"""[EMAIL_CARD]
+RECIPIENT:{recipient}
+SUBJECT:{subject}
+BODY:{body_text}
+MAILTO:{mailto_link}
+GMAIL:{gmail_link}
+[/EMAIL_CARD]{token_str}"""
     
     return {"agent_response": final_output, "agent_type": "EMAIL", "next_step": "supervisor_synthesizer"}
 
@@ -278,8 +345,8 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
     
     final_output = agent_response
 
-    if agent_type == "EMAIL" or agent_type == "CHAT":
-        # Email is already formatted natively and chat is precise.
+    if agent_type == "EMAIL" or agent_type == "CHAT" or agent_type == "GUARDRAIL":
+        # Handled natively, pass through.
         final_output = agent_response
 
     elif agent_type == "RAG":
@@ -306,6 +373,7 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 final_output = f"⚠️ **Sarvam API Error:** {api_res.get('message', 'Credits exhausted or API failed.')}"
             else:
                 final_output = api_res["choices"][0].get("message", {}).get("content", "") if "choices" in api_res else ""
+                final_output += extract_token_usage(api_res)
         except Exception as e:
             logger.error(f"Upstream Sarvam API gateway error handled: {e}")
             final_output = "System updates are currently processing. Please retry."
@@ -442,6 +510,7 @@ workflow.add_node("general_chat_agent", general_chat_agent_node)
 workflow.add_node("rag_modulator", rag_modulator_node)
 workflow.add_node("web_scraper", web_scraper_node)
 workflow.add_node("email_agent", email_agent_node)
+workflow.add_node("guardrail_agent", guardrail_agent_node)
 workflow.add_node("supervisor_synthesizer", supervisor_synthesizer_node)
 workflow.add_node("commit_to_memory", commit_cache_persistence_node)
 
@@ -459,7 +528,8 @@ workflow.add_conditional_edges(
         "general_chat_agent": "general_chat_agent",
         "rag_modulator": "rag_modulator",
         "web_scraper": "web_scraper",
-        "email_agent": "email_agent"
+        "email_agent": "email_agent",
+        "guardrail_agent": "guardrail_agent"
     }
 )
 
@@ -475,6 +545,7 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("web_scraper", "supervisor_synthesizer")
 workflow.add_edge("email_agent", "supervisor_synthesizer")
+workflow.add_edge("guardrail_agent", "supervisor_synthesizer")
 
 # Final persistence and end
 workflow.add_edge("supervisor_synthesizer", "commit_to_memory")

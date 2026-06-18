@@ -209,7 +209,8 @@ def process_upload_task(job_id: str, file_path: str, file_name: str, start_time:
             if ocr_result.get("success") and text_content:
                 base_name = os.path.splitext(file_name)[0]
                 md_filename = f"{base_name}_ocr.md"
-                md_file_path = os.path.join(DB_DIR, md_filename)
+                import tempfile
+                md_file_path = os.path.join(tempfile.gettempdir(), md_filename)
                 with open(md_file_path, "w", encoding="utf-8") as f:
                     f.write(text_content)
                 
@@ -264,7 +265,8 @@ def process_ocr_task(job_id: str, file_path: str, file_name: str, language_code:
         if ocr_result.get("success") and text_content:
             base_name = os.path.splitext(file_name)[0]
             md_filename = f"{base_name}_ocr.md"
-            md_file_path = os.path.join(DB_DIR, md_filename)
+            import tempfile
+            md_file_path = os.path.join(tempfile.gettempdir(), md_filename)
             with open(md_file_path, "w", encoding="utf-8") as f:
                 f.write(text_content)
                 
