@@ -148,6 +148,23 @@ async def get_status():
     except Exception as e:
         return {"status": "degraded", "error": str(e)}
 
+@app.delete("/api/rag/clear")
+async def clear_rag_memory(current_user = Depends(get_current_user)):
+    """Clears the underlying ChromaDB and all uploaded documents."""
+    try:
+        # 1. Clear TinyDB Tracking records
+        DocQuery = Query()
+        documents_table.remove(DocQuery.username == current_user["username"])
+        
+        # 2. Clear RAG Vector Store
+        if hasattr(rag_engine, 'clear_index'):
+            rag_engine.clear_index()
+            return {"success": True, "message": "Knowledge base cleared."}
+        else:
+            return {"success": False, "message": "RAG engine not initialized."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.post("/api/auth/signup")
 async def signup(request: SignupRequest):
     role = request.role.lower()

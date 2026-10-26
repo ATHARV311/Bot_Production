@@ -564,7 +564,7 @@ async function submitUserMessage() {
     appendMessageBubble("user", text);
     state.messages.push({ role: "user", content: text });
     
-    const currentSession = state.sessions.find(s => s.id === state.currentSessionId);
+    const currentSession = state.sessions.find(s => s.session_id === state.currentSessionId);
     if (currentSession) {
         if (currentSession.messages.length === 1 || currentSession.title === "New Chat") {
             const titleText = text.length > 25 ? text.substring(0, 22) + "..." : text;
@@ -1224,3 +1224,45 @@ function renderWelcomeScreen() {
     `;
     setupSuggestedChips();
 }
+
+// ==========================================================================
+// KNOWLEDGE BASE CLEAR HANDLER
+// ==========================================================================
+document.addEventListener("DOMContentLoaded", () => {
+    const clearDocsBtn = document.getElementById("clear-docs-btn");
+    if (clearDocsBtn) {
+        clearDocsBtn.addEventListener("click", async () => {
+            const confirmClear = confirm("Are you sure you want to completely erase the corporate knowledge base?");
+            if (!confirmClear) return;
+            
+            try {
+                clearDocsBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Clearing...`;
+                const res = await fetch(`${BASE_URL}/api/rag/clear`, {
+                    method: "DELETE"
+                });
+                
+                if (res.ok) {
+                    showToast("Knowledge Base successfully cleared.");
+                    
+                    // Clear UI visual elements
+                    const docsList = document.getElementById("user-documents-list");
+                    if (docsList) {
+                        docsList.innerHTML = '<li class="empty-sources">No documents uploaded yet.</li>';
+                    }
+                    
+                    const chunkStatus = document.getElementById("indexed-chunks");
+                    if (chunkStatus) {
+                        chunkStatus.innerText = "0 chunks";
+                    }
+                } else {
+                    showToast("Failed to clear Knowledge Base.");
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Error clearing Knowledge Base.");
+            } finally {
+                clearDocsBtn.innerHTML = `<i class="fa-solid fa-trash-can"></i> Clear Knowledge Base`;
+            }
+        });
+    }
+});

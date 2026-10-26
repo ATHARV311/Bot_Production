@@ -371,12 +371,14 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
             api_res = sarvam_client.chat_complete(messages=messages_payload, model="sarvam-30b", temperature=0.6)
             if api_res.get("error"):
                 final_output = f"⚠️ **Sarvam API Error:** {api_res.get('message', 'Credits exhausted or API failed.')}"
+                token_str = ""
             else:
                 final_output = api_res["choices"][0].get("message", {}).get("content", "") if "choices" in api_res else ""
-                final_output += extract_token_usage(api_res)
+                token_str = extract_token_usage(api_res)
         except Exception as e:
             logger.error(f"Upstream Sarvam API gateway error handled: {e}")
             final_output = "System updates are currently processing. Please retry."
+            token_str = ""
             
         extracted_lang = state.get("extracted_lang", "English")
         prompt_translations = {
@@ -395,6 +397,7 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
         
         if final_output:
             final_output += f"\n\n**{more_info_prompt}**"
+            final_output += token_str
 
     elif agent_type == "WEB":
         # Split links away from main body text
@@ -444,8 +447,10 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 api_res = sarvam_client.chat_complete(messages=[{"role": "user", "content": summary_prompt}], model="sarvam-30b", temperature=0.1)
                 if api_res.get("error"):
                     clean_summary = f"⚠️ **Sarvam API Error:** {api_res.get('message', 'Credits exhausted or API failed.')}"
+                    token_str = ""
                 else:
                     clean_summary = api_res["choices"][0].get("message", {}).get("content", "") if "choices" in api_res else ""
+                    token_str = extract_token_usage(api_res)
                 
                 # Extract only the content inside the final_answer tags
                 match = re.search(r"<final_answer>(.*?)</final_answer>", clean_summary, re.DOTALL)
@@ -456,6 +461,7 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                     clean_summary = clean_summary[clean_summary.rfind("INDIA NEWS:"):]
             except Exception:
                 clean_summary = ""
+                token_str = ""
 
             if not clean_summary.strip() or "INDIA NEWS:" not in clean_summary:
                 clean_summary = f"INDIA NEWS:\n1. {premium_lines[0]}\n2. {premium_lines[1] if len(premium_lines)>1 else premium_lines[0]}\n\nGlobal NEWS:\n1. {premium_lines[-1]}\n2. {premium_lines[-2] if len(premium_lines)>1 else premium_lines[-1]}"
@@ -473,12 +479,15 @@ def supervisor_synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 api_res = sarvam_client.chat_complete(messages=[{"role": "user", "content": summary_prompt}], model="sarvam-30b", temperature=0.1)
                 if api_res.get("error"):
                     clean_summary = f"⚠️ **Sarvam API Error:** {api_res.get('message', 'Credits exhausted or API failed.')}"
+                    token_str = ""
                 else:
                     clean_summary = api_res["choices"][0].get("message", {}).get("content", "") if "choices" in api_res else ""
+                    token_str = extract_token_usage(api_res)
             except Exception:
                 clean_summary = main_text_context
+                token_str = ""
 
-        final_output = f"{clean_summary.strip()}\n{sources_section}"
+        final_output = f"{clean_summary.strip()}\n{sources_section}\n{token_str}"
 
     fallback_msg = state.get("fallback_message", "")
     if fallback_msg:
